@@ -125,7 +125,7 @@ function generateScreamStream() {
   const layer1 = `${p.l1Amp}*(1+${p.l1Rise}*t)*sin(2*PI*t*(${p.l1Base}+${p.l1Range}*random(floor(t*${p.l1JumpRate})*137+${p.l1Seed})))`;
   const layer2 = `${p.l2Amp}*sin(2*PI*t*(${p.l2Base}+${p.l2SweepRate}*t+${p.l2Range}*random(floor(t*${p.l2JumpRate})*251+${p.l2Seed})))`;
   const layer3 = `${p.l3Amp}*(1+${p.l3Rise}*t)*sin(2*PI*t*(${p.l3Base}+${p.l3Range}*random(floor(t*${p.l3JumpRate})*89+${p.l3Seed})))`;
-  const layer4 = `${p.l4Amp}*(random(floor(t*${p.l4BurstRate})*173+${p.l4Seed})>${p.l4Threshold})*(2*random(t*48000)-1)`;
+  const layer4 = `${p.l4Amp}*gt(random(floor(t*${p.l4BurstRate})*173+${p.l4Seed}),${p.l4Threshold})*(2*random(t*48000)-1)`;
   const layer5 = `${p.l5Amp}*(2*random(t*48000+7777)-1)`;
 
   const expr = `${layer1}+${layer2}+${layer3}+${layer4}+${layer5}`;
