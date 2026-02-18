@@ -132,7 +132,7 @@ function generateScreamStream() {
 
   const ffmpeg = spawn('ffmpeg', [
     '-f', 'lavfi',
-    '-i', `aevalsrc=${expr}:s=48000:d=${p.duration.toFixed(2)}`,
+    '-i', `aevalsrc='${expr}':s=48000:d=${p.duration.toFixed(2)}`,
     // Post-processing filter chain
     '-af', [
       `highpass=f=${p.hpCutoff.toFixed(0)}`,
