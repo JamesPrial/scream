@@ -1,0 +1,16 @@
+{
+  "name": "openclaw-scream",
+  "version": "1.0.0",
+  "description": "Discord voice channel scream bot for OpenClaw",
+  "type": "module",
+  "main": "scream.mjs",
+  "scripts": {
+    "scream": "node scream.mjs",
+    "generate-audio": "bash audio/generate.sh"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.19.0",
+    "@noble/ciphers": "^2.1.1",
+    "discord.js": "^14.25.1"
+  }
+}
