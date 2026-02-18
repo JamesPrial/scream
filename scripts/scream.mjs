@@ -3,7 +3,8 @@
 // Usage: node scream.mjs <guildId> [channelId]
 // If channelId is omitted, joins the first populated voice channel in the guild.
 
-import { readFileSync, createReadStream } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -22,7 +23,6 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // --- Config ---
-const AUDIO_FILE = join(__dirname, '..', 'audio', 'scream.ogg');
 const CONNECT_TIMEOUT_MS = 15_000;
 const READY_TIMEOUT_MS = 15_000;
 
@@ -66,6 +66,105 @@ const forceExitTimer = setTimeout(() => {
   process.exit(1);
 }, 30_000);
 forceExitTimer.unref();
+
+// --- Dynamic scream generation ---
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function randInt(min, max) {
+  return Math.floor(rand(min, max + 1));
+}
+
+function randomizeParams() {
+  return {
+    duration: rand(2.5, 4.0),
+    // Layer 1: primary scream with frequency jumps
+    l1Base: rand(300, 700),
+    l1Range: rand(800, 2500),
+    l1JumpRate: rand(5, 15),
+    l1Amp: rand(0.3, 0.5),
+    l1Rise: rand(0.5, 2.0),
+    l1Seed: randInt(1, 9999),
+    // Layer 2: harmonic sweep + jumps
+    l2Base: rand(200, 500),
+    l2SweepRate: rand(300, 900),
+    l2Range: rand(400, 1200),
+    l2JumpRate: rand(3, 10),
+    l2Amp: rand(0.15, 0.3),
+    l2Seed: randInt(1, 9999),
+    // Layer 3: high shriek with fast jumps
+    l3Base: rand(900, 1800),
+    l3Range: rand(800, 2400),
+    l3JumpRate: rand(10, 25),
+    l3Amp: rand(0.15, 0.3),
+    l3Rise: rand(1.0, 3.0),
+    l3Seed: randInt(1, 9999),
+    // Layer 4: noise bursts
+    l4BurstRate: rand(3, 12),
+    l4Threshold: rand(0.5, 0.85),
+    l4Amp: rand(0.1, 0.25),
+    l4Seed: randInt(1, 9999),
+    // Layer 5: background noise
+    l5Amp: rand(0.05, 0.15),
+    // Post-processing
+    crusherBits: randInt(6, 12),
+    crusherMix: rand(0.3, 0.7),
+    compRatio: rand(4, 12),
+    volumeBoost: rand(6, 12),
+    hpCutoff: rand(80, 200),
+    lpCutoff: rand(6000, 12000),
+  };
+}
+
+function generateScreamStream() {
+  const p = randomizeParams();
+
+  // Each layer uses random(floor(t*jumpRate)*mult+seed) to create stepped frequency jumps.
+  // random() in ffmpeg aevalsrc returns 0..1, so we scale it to a frequency range.
+  const layer1 = `${p.l1Amp}*(1+${p.l1Rise}*t)*sin(2*PI*t*(${p.l1Base}+${p.l1Range}*random(floor(t*${p.l1JumpRate})*137+${p.l1Seed})))`;
+  const layer2 = `${p.l2Amp}*sin(2*PI*t*(${p.l2Base}+${p.l2SweepRate}*t+${p.l2Range}*random(floor(t*${p.l2JumpRate})*251+${p.l2Seed})))`;
+  const layer3 = `${p.l3Amp}*(1+${p.l3Rise}*t)*sin(2*PI*t*(${p.l3Base}+${p.l3Range}*random(floor(t*${p.l3JumpRate})*89+${p.l3Seed})))`;
+  const layer4 = `${p.l4Amp}*(random(floor(t*${p.l4BurstRate})*173+${p.l4Seed})>${p.l4Threshold})*(2*random(t*48000)-1)`;
+  const layer5 = `${p.l5Amp}*(2*random(t*48000+7777)-1)`;
+
+  const expr = `${layer1}+${layer2}+${layer3}+${layer4}+${layer5}`;
+
+  const ffmpeg = spawn('ffmpeg', [
+    '-f', 'lavfi',
+    '-i', `aevalsrc=${expr}:s=48000:d=${p.duration.toFixed(2)}`,
+    // Post-processing filter chain
+    '-af', [
+      `highpass=f=${p.hpCutoff.toFixed(0)}`,
+      `lowpass=f=${p.lpCutoff.toFixed(0)}`,
+      `acrusher=bits=${p.crusherBits}:mix=${p.crusherMix.toFixed(2)}:mode=log:aa=1`,
+      `acompressor=ratio=${p.compRatio.toFixed(0)}:attack=5:release=50:threshold=-20dB`,
+      `volume=${p.volumeBoost.toFixed(1)}dB`,
+      'alimiter=limit=0.95:attack=1:release=10',
+    ].join(','),
+    '-c:a', 'libopus',
+    '-b:a', '96k',
+    '-vbr', 'off',
+    '-f', 'ogg',
+    '-page_duration', '20000',
+    'pipe:1',
+  ], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  ffmpeg.stderr.on('data', (chunk) => {
+    const msg = chunk.toString().trim();
+    if (msg) console.error(`[ffmpeg] ${msg}`);
+  });
+
+  ffmpeg.on('error', (err) => {
+    console.error('FFmpeg spawn error:', err.message);
+  });
+
+  console.log(`Generating scream: ${p.duration.toFixed(2)}s, crusher=${p.crusherBits}bit, boost=${p.volumeBoost.toFixed(1)}dB`);
+
+  return ffmpeg.stdout;
+}
 
 async function scream(readyPromise) {
   // Wait for the client to be ready
@@ -118,7 +217,7 @@ async function scream(readyPromise) {
   const player = createAudioPlayer({
     behaviors: { noSubscriber: NoSubscriberBehavior.Play },
   });
-  const resource = createAudioResource(createReadStream(AUDIO_FILE), {
+  const resource = createAudioResource(generateScreamStream(), {
     inputType: StreamType.OggOpus,
   });
 
